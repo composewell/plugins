@@ -31,8 +31,9 @@ module System.Plugins.Load (
       LoadStatus(..)
 
       -- * High-level interface
-      , load
-      , load_
+      , load          -- load relocatable objects
+      , load_         -- same as load but without package DB path
+      , load'         -- load relocatable or dynamic shared objects
       , dynload
       , pdynload
       , pdynload_
@@ -164,11 +165,11 @@ data LoadStatus a
         | LoadFailure Errors
 
 --
--- | 'load' is the basic interface to the dynamic loader. A call to
--- 'load' imports a single object file into the caller's address space,
--- returning the value associated with the symbol requested. Libraries
--- and modules that the requested module depends upon are loaded and
--- linked in turn.
+-- | 'load' is the basic interface to the dynamic loader. A call to 'load'
+-- imports a single relocatable object file into the caller's address space,
+-- returning the value associated with the symbol requested. Libraries and
+-- modules that the requested module depends upon are loaded and linked in
+-- turn.
 --
 -- The first argument is the path to the object file to load, the second
 -- argument is a list of directories to search for dependent modules.
@@ -193,9 +194,20 @@ load :: FilePath                -- ^ object file
      -> [PackageConf]           -- ^ list of package.conf paths
      -> Symbol                  -- ^ symbol to find
      -> IO (LoadStatus a)
+load obj = load' obj False
 
-load obj incpaths pkgconfs sym = do
-    initLinker_ $ fromIntegral 0
+-- | 'load'' is a lower level interface which provides the option to load a
+-- relocatable object or a shared lib (dll or .so).
+--
+load' :: FilePath               -- ^ object file
+     -> Bool                    -- ^ Is the object file a shared lib?
+     -> [FilePath]              -- ^ any include paths
+     -> [PackageConf]           -- ^ list of package.conf paths
+     -> Symbol                  -- ^ symbol to find
+     -> IO (LoadStatus a)
+
+load' obj shared incpaths pkgconfs sym = do
+    initLinker
 
     -- load extra package information
     mapM_ addPkgConf pkgconfs
@@ -206,7 +218,10 @@ load obj incpaths pkgconfs sym = do
     putStr (' ':(decode $ ifaceModuleName hif)) >> hFlush stdout
 #endif
 
-    m' <- loadObject obj . Object . ifaceModuleName $ hif
+    m' <- if shared
+          then loadShared obj
+          else loadObject obj . Object . ifaceModuleName $ hif
+
     let m = m' { iface = hif }
     resolveObjs (mapM_ unloadAll (m:moduleDeps))
 
@@ -260,7 +275,7 @@ dynload obj incpaths pkgconfs sym = do
 --
 -- Use GHC at runtime so we get staged type inference, providing full
 -- power dynamics, *on module interfaces only*. This is quite suitable
--- for plugins, of coures :)
+-- for plugins, of course :)
 --
 -- TODO where does the .hc file go in the call to build() ?
 --
