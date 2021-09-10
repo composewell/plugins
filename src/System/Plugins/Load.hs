@@ -637,11 +637,14 @@ loadShared str' = do
 #if DEBUG
     putStrLn $ " shared: " ++ str'
 #endif
+    let str = str'
+    {-
     let str = case str' of
           -- TODO My GHC segfaults because libm.so is a linker script
           "libm.so" -> "/lib/x86_64-linux-gnu/libm.so.6"
           "libpthread.so" -> "/lib/x86_64-linux-gnu/libpthread.so.0"
           x -> x
+          -}
     maybe_errmsg <- withCString str $ \dll -> c_addDLL dll
     if maybe_errmsg == nullPtr
         then return (Module str (mkModid str) Shared undefined (Package (mkModid str)))
